@@ -9,7 +9,7 @@
  * file that was distributed with this source code.
  */
 
-namespace LucaDegasperi\OAuth2Server\Storage\Mongo;
+namespace LucaDegasperi\OAuth2Server\Storage;
 
 use Carbon\Carbon;
 use League\OAuth2\Server\Entity\AccessTokenEntity;
@@ -33,7 +33,7 @@ class FluentAccessToken extends AbstractFluentAdapter implements AccessTokenInte
     public function get($token)
     {
         $result = $this->getConnection()->table('oauth_access_tokens')
-                ->where('id', $token)
+                ->where('oauth_access_tokens.id', $token)
                 ->first();
 
         if (is_null($result)) {
@@ -41,8 +41,8 @@ class FluentAccessToken extends AbstractFluentAdapter implements AccessTokenInte
         }
 
         return (new AccessTokenEntity($this->getServer()))
-               ->setId($result['id'])
-               ->setExpireTime((int) $result['expire_time']);
+               ->setId($result->id)
+               ->setExpireTime((int) $result->expire_time);
     }
 
     /*
@@ -74,22 +74,18 @@ class FluentAccessToken extends AbstractFluentAdapter implements AccessTokenInte
     public function getScopes(AccessTokenEntity $token)
     {
         $result = $this->getConnection()->table('oauth_access_token_scopes')
-                ->where('access_token_id', $token->getId())
+                ->select('oauth_scopes.*')
+                ->join('oauth_scopes', 'oauth_access_token_scopes.scope_id', '=', 'oauth_scopes.id')
+                ->where('oauth_access_token_scopes.access_token_id', $token->getId())
                 ->get();
 
         $scopes = [];
 
         foreach ($result as $scope) {
-
-            $scope = $this->getConnection()->table('oauth_scopes')
-                ->where('id', $scope['scope_id'])
-                ->get();
-
             $scopes[] = (new ScopeEntity($this->getServer()))->hydrate([
-               'id' => $scope['id'],
-                'description' => $scope['description'],
+               'id' => $scope->id,
+                'description' => $scope->description,
             ]);
-
         }
 
         return $scopes;
@@ -147,7 +143,7 @@ class FluentAccessToken extends AbstractFluentAdapter implements AccessTokenInte
     public function delete(AccessTokenEntity $token)
     {
         $this->getConnection()->table('oauth_access_tokens')
-        ->where('id', $token->getId())
+        ->where('oauth_access_tokens.id', $token->getId())
         ->delete();
     }
 }

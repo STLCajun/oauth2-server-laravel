@@ -9,7 +9,7 @@
  * file that was distributed with this source code.
  */
 
-namespace LucaDegasperi\OAuth2Server\Storage\Mongo;
+namespace LucaDegasperi\OAuth2Server\Storage;
 
 use Carbon\Carbon;
 use Illuminate\Database\ConnectionResolverInterface as Resolver;
@@ -77,36 +77,41 @@ class FluentClient extends AbstractFluentAdapter implements ClientInterface
     {
         $query = null;
 
-        if (! is_null($redirectUri) && is_null($clientSecret)) {
-            $allowedClientIds = $this->getConnection()->table('oauth_client_endpoints')
-                ->where('redirect_uri', $redirectUri)
-                ->pluck('client_id');
-            // var_dump($allowedClientIds);
+        if (!is_null($redirectUri) && is_null($clientSecret)) {
             $query = $this->getConnection()->table('oauth_clients')
-                ->whereIn('id', $allowedClientIds)
-                ->where('id', $clientId);
-        } elseif (! is_null($clientSecret) && is_null($redirectUri)) {
+                   ->select(
+                       'oauth_clients.id as id',
+                       'oauth_clients.secret as secret',
+                       'oauth_client_endpoints.redirect_uri as redirect_uri',
+                       'oauth_clients.name as name')
+                   ->join('oauth_client_endpoints', 'oauth_clients.id', '=', 'oauth_client_endpoints.client_id')
+                   ->where('oauth_clients.id', $clientId)
+                   ->where('oauth_client_endpoints.redirect_uri', $redirectUri);
+        } elseif (!is_null($clientSecret) && is_null($redirectUri)) {
             $query = $this->getConnection()->table('oauth_clients')
-                ->where('id', $clientId)
-                ->where('secret', $clientSecret);
-        } elseif (! is_null($clientSecret) && ! is_null($redirectUri)) {
-            $allowedClientIds = $this->getConnection()->table('oauth_client_endpoints')
-                ->where('redirect_uri', $redirectUri)
-                ->pluck('client_id');
-            // var_dump($allowedClientIds);
+                   ->select(
+                       'oauth_clients.id as id',
+                       'oauth_clients.secret as secret',
+                       'oauth_clients.name as name')
+                   ->where('oauth_clients.id', $clientId)
+                   ->where('oauth_clients.secret', $clientSecret);
+        } elseif (!is_null($clientSecret) && !is_null($redirectUri)) {
             $query = $this->getConnection()->table('oauth_clients')
-                ->whereIn('id', $allowedClientIds)
-                ->where('id', $clientId)
-                ->where('secret', $clientSecret);
+                   ->select(
+                       'oauth_clients.id as id',
+                       'oauth_clients.secret as secret',
+                       'oauth_client_endpoints.redirect_uri as redirect_uri',
+                       'oauth_clients.name as name')
+                   ->join('oauth_client_endpoints', 'oauth_clients.id', '=', 'oauth_client_endpoints.client_id')
+                   ->where('oauth_clients.id', $clientId)
+                   ->where('oauth_clients.secret', $clientSecret)
+                   ->where('oauth_client_endpoints.redirect_uri', $redirectUri);
         }
-        if ($this->limitClientsToGrants === true and ! is_null($grantType)) {
-            $allowedGrantIds = $this->getConnection()->table('oauth_grants')
-                ->where('id', $grantType)
-                ->pluck('id');
-            $allowedClientIds = $this->getConnection()->table('oauth_client_grants')
-                ->whereIn('grant_id', $allowedGrantIds)
-                ->pluck('client_id');
-            $query = $query->whereIn('id', $allowedClientIds);
+
+        if ($this->limitClientsToGrants === true && !is_null($grantType)) {
+            $query = $query->join('oauth_client_grants', 'oauth_clients.id', '=', 'oauth_client_grants.client_id')
+                   ->join('oauth_grants', 'oauth_grants.id', '=', 'oauth_client_grants.grant_id')
+                   ->where('oauth_grants.id', $grantType);
         }
 
         $result = $query->first();
@@ -127,16 +132,17 @@ class FluentClient extends AbstractFluentAdapter implements ClientInterface
      */
     public function getBySession(SessionEntity $session)
     {
-        $allowedClientIds = $this->getConnection()->table('oauth_sessions')
-            ->where('id', $session->getId())
-            ->pluck('client_id');
-
         $result = $this->getConnection()->table('oauth_clients')
-            ->whereIn('id', '=', $allowedClientIds)
-            ->first();
+                ->select(
+                    'oauth_clients.id as id',
+                    'oauth_clients.secret as secret',
+                    'oauth_clients.name as name')
+                ->join('oauth_sessions', 'oauth_sessions.client_id', '=', 'oauth_clients.id')
+                ->where('oauth_sessions.id', '=', $session->getId())
+                ->first();
 
         if (is_null($result)) {
-            return null;
+            return;
         }
 
         return $this->hydrateEntity($result);
@@ -176,7 +182,7 @@ class FluentClient extends AbstractFluentAdapter implements ClientInterface
             'id' => $result->id,
             'name' => $result->name,
             'secret' => $result->secret,
-            'redirectUri' => (isset($result['redirect_uri']) ? $result['redirect_uri'] : null),
+            'redirectUri' => (isset($result->redirect_uri) ? $result->redirect_uri : null),
         ]);
 
         return $client;
